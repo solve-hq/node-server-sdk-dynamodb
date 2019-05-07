@@ -1,8 +1,8 @@
-var DynamoDBFeatureStore = require('../dynamodb_feature_store');
-var helpers = require('../dynamodb_helpers');
-var testBase = require('ldclient-node/test/feature_store_test_base');
-var dataKind = require('ldclient-node/versioned_data_kind');
-var AWS = require('aws-sdk');
+var DynamoDBFeatureStore = require("../dynamodb_feature_store");
+var helpers = require("../dynamodb_helpers");
+var testBase = require("ldclient-node/test/feature_store_test_base");
+var dataKind = require("ldclient-node/versioned_data_kind");
+var AWS = require("aws-sdk");
 
 function stubLogger() {
   return {
@@ -13,17 +13,17 @@ function stubLogger() {
   };
 }
 
-describe('DynamoDBFeatureStore', function() {
-
+describe("DynamoDBFeatureStore", function() {
   AWS.config.update({
-    credentials: { accessKeyId: 'fake', secretAccessKey: 'fake' },
-    region: 'us-west-2',
-    endpoint: 'http://localhost:8000'
+    credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
+    region: "us-west-2",
+    endpoint: "http://localhost:8000"
   });
 
   var dynamodb = new AWS.DynamoDB();
 
-  var table = 'test-store';
+  var table = "test-store";
+  var dynamoDBClient = new AWS.DynamoDB.DocumentClient();
 
   beforeAll(function(done) {
     dynamodb.describeTable({ TableName: table }, function(err) {
@@ -34,23 +34,26 @@ describe('DynamoDBFeatureStore', function() {
 
       var params = {
         TableName: table,
-        KeySchema: [ 
-          { AttributeName: 'namespace', KeyType: 'HASH'},  //Partition key
-          { AttributeName: 'key', KeyType: 'RANGE' }  //Sort key
+        KeySchema: [
+          { AttributeName: "namespace", KeyType: "HASH" }, //Partition key
+          { AttributeName: "key", KeyType: "RANGE" } //Sort key
         ],
-        AttributeDefinitions: [       
-          { AttributeName: 'namespace', AttributeType: 'S' },
-          { AttributeName: 'key', AttributeType: 'S' }
+        AttributeDefinitions: [
+          { AttributeName: "namespace", AttributeType: "S" },
+          { AttributeName: "key", AttributeType: "S" }
         ],
-        ProvisionedThroughput: {       
-          ReadCapacityUnits: 10, 
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 10,
           WriteCapacityUnits: 10
         }
       };
 
       dynamodb.createTable(params, function(err) {
         if (err) {
-          done.fail('Unable to create table. Error JSON: ' + JSON.stringify(err, null, 2));
+          done.fail(
+            "Unable to create table. Error JSON: " +
+              JSON.stringify(err, null, 2)
+          );
         }
         waitForTable(done);
       });
@@ -60,10 +63,15 @@ describe('DynamoDBFeatureStore', function() {
   function waitForTable(done) {
     dynamodb.describeTable({ TableName: table }, function(err, tableInfo) {
       if (err) {
-        if (err.code == 'ResourceNotFoundException' || (tableInfo && tableInfo.Table.TableStatus == 'TableStatusActive')) {
-          setTimeout(function () { waitForTable(done); }, 100);
+        if (
+          err.code == "ResourceNotFoundException" ||
+          (tableInfo && tableInfo.Table.TableStatus == "TableStatusActive")
+        ) {
+          setTimeout(function() {
+            waitForTable(done);
+          }, 100);
         } else {
-          done.fail('Unable to create table: ' + JSON.stringify(err, null, 2));
+          done.fail("Unable to create table: " + JSON.stringify(err, null, 2));
         }
       } else {
         done();
@@ -74,8 +82,11 @@ describe('DynamoDBFeatureStore', function() {
   function clearTable(done) {
     var client = new AWS.DynamoDB.DocumentClient();
     var ops = [];
-    helpers.paginationHelper({TableName: table}, function (params, cb) { client.scan(params, cb); })
-      .then(function (items) {
+    helpers
+      .paginationHelper({ TableName: table }, function(params, cb) {
+        client.scan(params, cb);
+      })
+      .then(function(items) {
         for (var i = 0; i < items.length; i++) {
           ops.push({
             DeleteRequest: {
@@ -87,25 +98,30 @@ describe('DynamoDBFeatureStore', function() {
             }
           });
         }
-        Promise.all(helpers.batchWrite(client, table, ops))
-          .then(function() { done(); });
+        Promise.all(helpers.batchWrite(client, table, ops)).then(function() {
+          done();
+        });
       });
   }
 
   function makeStore() {
-    return new DynamoDBFeatureStore(table);
+    return new DynamoDBFeatureStore(table, { dynamoDBClient });
   }
 
   function makeStoreWithoutCache() {
-    return new DynamoDBFeatureStore(table, {cacheTTL: 0});
+    return new DynamoDBFeatureStore(table, { dynamoDBClient, cacheTTL: 0 });
   }
 
   function makeStoreWithPrefix(prefix) {
-    return new DynamoDBFeatureStore(table, {prefix: prefix, cacheTTL: 0});
+    return new DynamoDBFeatureStore(table, {
+      dynamoDBClient,
+      prefix: prefix,
+      cacheTTL: 0
+    });
   }
 
   function makeStoreWithDefaultPrefix() {
-    return makeStoreWithPrefix('test');
+    return makeStoreWithPrefix("test");
   }
 
   function makeStoreWithHook(hook) {
@@ -114,24 +130,33 @@ describe('DynamoDBFeatureStore', function() {
     return store;
   }
 
-  describe('cached', function() {
+  describe("cached", function() {
     testBase.baseFeatureStoreTests(makeStore, clearTable, true);
   });
 
-  describe('uncached', function() {
-    testBase.baseFeatureStoreTests(makeStoreWithoutCache, clearTable, false, makeStoreWithPrefix);
+  describe("uncached", function() {
+    testBase.baseFeatureStoreTests(
+      makeStoreWithoutCache,
+      clearTable,
+      false,
+      makeStoreWithPrefix
+    );
   });
 
   // We run the test suite again here because in the DynamoDB implementation, the prefix is entirely
   // omitted by default, so we want to make sure all the logic is correct with or without one.
-  describe('uncached with prefix', function() {
-    testBase.baseFeatureStoreTests(makeStoreWithDefaultPrefix, clearTable, false);
+  describe("uncached with prefix", function() {
+    testBase.baseFeatureStoreTests(
+      makeStoreWithDefaultPrefix,
+      clearTable,
+      false
+    );
   });
 
   testBase.concurrentModificationTests(makeStore, makeStoreWithHook);
 
-  describe('handling errors from DynamoDB client', function() {
-    var err = new Error('error');
+  describe("handling errors from DynamoDB client", function() {
+    var err = new Error("error");
     var client;
     var logger;
     var store;
@@ -139,11 +164,14 @@ describe('DynamoDBFeatureStore', function() {
     beforeEach(() => {
       client = {};
       logger = stubLogger();
-      store = new DynamoDBFeatureStore(table, { dynamoDBClient: client, logger: logger });
+      store = new DynamoDBFeatureStore(table, {
+        dynamoDBClient: client,
+        logger: logger
+      });
     });
 
-    it('error from query in init', done => {
-      var data = { features: { flag: { key: 'flag', version: 1 } } };
+    it("error from query in init", done => {
+      var data = { features: { flag: { key: "flag", version: 1 } } };
       client.query = (params, cb) => cb(err);
       store.init(data, function() {
         expect(logger.error).toHaveBeenCalled();
@@ -151,8 +179,8 @@ describe('DynamoDBFeatureStore', function() {
       });
     });
 
-    it('error from batchWrite in init', done => {
-      var data = { features: { flag: { key: 'flag', version: 1 } } };
+    it("error from batchWrite in init", done => {
+      var data = { features: { flag: { key: "flag", version: 1 } } };
       client.query = (params, cb) => cb(null, { Items: [] });
       client.batchWrite = (params, cb) => cb(err);
       store.init(data, function() {
@@ -161,16 +189,16 @@ describe('DynamoDBFeatureStore', function() {
       });
     });
 
-    it('error from get', done => {
+    it("error from get", done => {
       client.get = (params, cb) => cb(err);
-      store.get(dataKind.features, 'flag', function(result) {
+      store.get(dataKind.features, "flag", function(result) {
         expect(result).toBe(null);
         expect(logger.error).toHaveBeenCalled();
         done();
       });
     });
 
-    it('error from get all', done => {
+    it("error from get all", done => {
       client.query = (params, cb) => cb(err);
       store.all(dataKind.features, function(result) {
         expect(result).toBe(null);
@@ -179,15 +207,15 @@ describe('DynamoDBFeatureStore', function() {
       });
     });
 
-    it('error from upsert', done => {
+    it("error from upsert", done => {
       client.put = (params, cb) => cb(err);
-      store.upsert(dataKind.features, { key: 'flag', version: 1 }, function() {
+      store.upsert(dataKind.features, { key: "flag", version: 1 }, function() {
         expect(logger.error).toHaveBeenCalled();
         done();
       });
     });
 
-    it('error from initialized', done => {
+    it("error from initialized", done => {
       client.get = (params, cb) => cb(err);
       store.initialized(function(result) {
         expect(result).toBe(false);
